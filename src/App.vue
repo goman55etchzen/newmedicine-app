@@ -1,6 +1,7 @@
 <template>
 <div class="app-container">
   <header class="app-header">
+    <h1 class="title">お薬管理アプリ</h1>
     <button
       type="button"
       id="menu-button"
@@ -30,7 +31,6 @@
   </header>
 
   <main v-if="currentPage === 'home'" class="page">
-    <h1>お薬管理アプリ</h1>
     <div class="card-list">
       <PillCard
         v-for="pill in pills"
@@ -69,157 +69,175 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import PillCard from './PillCard.vue';
 import PillDetail from './PillDetail.vue';
 import AddModal from './AddModal.vue';
 import DelModal from './DelModal.vue';
 import History from './History.vue';
 
-// 1. お薬データの型（インターフェース）を定義
+// 1. お薬データの型を定義
 interface Pill {
-id: number;
-name: string;
-prescribedDate: string;
-totalDays: number;
-dosage: string;
-timing: {
-  朝: boolean;
-  昼: boolean;
-  夜: boolean;
-  就寝前: boolean;
-};
-todayRecord: {
-  朝: boolean;
-  昼: boolean;
-  夜: boolean;
-  就寝前: boolean;
-};
+  id: number;
+  name: string;
+  prescribedDate: string;
+  totalDays: number;
+  dosage: string;
+  timing: {
+    朝: boolean;
+    昼: boolean;
+    夜: boolean;
+    就寝前: boolean;
+  };
+  todayRecord: {
+    朝: boolean;
+    昼: boolean;
+    夜: boolean;
+    就寝前: boolean;
+  };
 }
 
 interface HistoryRecord {
-date: string;
-pills: { name: string; dosage: string; totalDays: number }[];
+  date: string;
+  pills: { name: string; dosage: string; totalDays: number }[];
 }
 
-// ⭕ 修正：型定義の 'History' を小文字の 'history' に統一
 const currentPage = ref<'home' | 'detail' | 'history'>('home');
-
 const selectedPill = ref<Pill | null>(null);
 const isOpen = ref(false);
 const isAddModalOpen = ref(false);
-const isDelModalOpen = ref(false); // ⭕ 修正：Mの小文字ブレを修正
+const isDelModalOpen = ref(false); 
 
-// ⭕ 修正：構文エラーを綺麗にし、小文字の historyList に統一
-const historyList = ref<HistoryRecord[]>([
-{
-  date: '2026-06-01',
-  pills: [{ name: '葛根湯', dosage: '1袋', totalDays: 5 }]
-}
-]);
 
-// 3. pills 配列にも Pill[] 型を適用
-const pills = ref<Pill[]>([
-{
-  id: 1,
-  name: 'アタラックス',
-  prescribedDate: '2026-05-20',
-  totalDays: 30,
-  dosage: '300mg (3錠)',
-  timing: { 朝: true, 昼: true, 夜: false, 就寝前: true },
-  todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
-},
-{
-  id: 2,
-  name: 'ロキソニン',
-  prescribedDate: '2026-05-25',
-  totalDays: 15,
-  dosage: '60mg (1錠)',
-  timing: { 朝: false, 昼: true, 夜: true, 就寝前: false },
-  todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
-},
-{
-  id: 3,
-  name: 'ロラゼパム',
-  prescribedDate: '2026-05-27',
-  totalDays: 90,
-  dosage: '100mg (1錠)',
-  timing: { 朝: true, 昼: true, 夜: true, 就寝前: true },
-  todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
-},
-]);
+const defaultPills: Pill[] = [
+  {
+    id: 1,
+    name: 'アタラックス',
+    prescribedDate: '2026-05-20',
+    totalDays: 30,
+    dosage: '300mg (3錠)',
+    timing: { 朝: true, 昼: true, 夜: false, 就寝前: true },
+    todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
+  },
+  {
+    id: 2,
+    name: 'ロキソニン',
+    prescribedDate: '2026-05-25',
+    totalDays: 15,
+    dosage: '60mg (1錠)',
+    timing: { 朝: false, 昼: true, 夜: true, 就寝前: false },
+    todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
+  },
+  {
+    id: 3,
+    name: 'ロラゼパム',
+    prescribedDate: '2026-05-27',
+    totalDays: 90,
+    dosage: '100mg (1錠)',
+    timing: { 朝: true, 昼: true, 夜: true, 就寝前: true },
+    todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
+  },
+];
 
+const defaultHistory: HistoryRecord[] = [
+  {
+    date: '2026-06-01',
+    pills: [{ name: '葛根湯', dosage: '1袋', totalDays: 5 }]
+  }
+];
+
+// 変数名historyList に統一
+const pills = ref<Pill[]>([]);
+const historyList = ref<HistoryRecord[]>([]);
+
+
+onMounted(() => {
+  const savedPills = localStorage.getItem('pills_data');
+  const savedHistory = localStorage.getItem('history_data');
+  
+  pills.value = savedPills ? JSON.parse(savedPills) : defaultPills;
+  historyList.value = savedHistory ? JSON.parse(savedHistory) : defaultHistory;
+});
+
+// ⭕ 監視処理（構文エラーを修正、2つ目は historyList を監視するように変更）
+watch(pills, (newPills) => {
+  localStorage.setItem('pills_data', JSON.stringify(newPills));
+}, { deep: true });
+
+watch(historyList, (newHistory) => {
+  localStorage.setItem('history_data', JSON.stringify(newHistory));
+}, { deep: true });
+
+
+// --- 画面遷移や追加・削除のロジック群 ---
 const goToDetail = (pill: Pill) => {
-selectedPill.value = pill;
-currentPage.value = 'detail';
-isOpen.value = false;
+  selectedPill.value = pill;
+  currentPage.value = 'detail';
+  isOpen.value = false;
 };
 
 const goBack = () => {
-currentPage.value = 'home';
-selectedPill.value = null;
-isOpen.value = false;
+  currentPage.value = 'home';
+  selectedPill.value = null;
+  isOpen.value = false;
 };
 
 const openAddModal = () => {
-isAddModalOpen.value = true;
-isOpen.value = false;
+  isAddModalOpen.value = true;
+  isOpen.value = false;
 };
 
-// ⭕ 修正：小文字の 'history' に統一
 const goToHistory = () => {
-currentPage.value = 'history';
-isOpen.value = false;
+  currentPage.value = 'history';
+  isOpen.value = false;
 };
 
 const openDelModal = () => {
-isDelModalOpen.value = true;
+  isDelModalOpen.value = true;
 };
 
 const addPill = (newPillData: Omit<Pill, 'id' | 'todayRecord'>) => {
-const id = pills.value.length
-  ? Math.max(...pills.value.map((p) => p.id)) + 1 : 1;
+  const id = pills.value.length
+    ? Math.max(...pills.value.map((p) => p.id)) + 1 : 1;
 
-pills.value.push({
-  id,
-  name: newPillData.name,
-  prescribedDate: newPillData.prescribedDate,
-  totalDays: newPillData.totalDays,
-  dosage: newPillData.dosage,
-  timing: { ...newPillData.timing },
-  todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
-});
-
-// ⭕ 修正：historyList の変数名を揃える
-const sameDateRecord = historyList.value.find(h => h.date === newPillData.prescribedDate);
-
-if (sameDateRecord) {
-  sameDateRecord.pills.push({
+  pills.value.push({
+    id,
     name: newPillData.name,
+    prescribedDate: newPillData.prescribedDate,
+    totalDays: newPillData.totalDays,
     dosage: newPillData.dosage,
-    totalDays: newPillData.totalDays
-  });
-} else {
-  historyList.value.unshift({
-    date: newPillData.prescribedDate,
-    pills: [{ name: newPillData.name, dosage: newPillData.dosage, totalDays: newPillData.totalDays }]
+    timing: { ...newPillData.timing },
+    todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
   });
 
-  if (historyList.value.length > 3) {
-    historyList.value.pop();
+  
+  const sameDateRecord = historyList.value.find(h => h.date === newPillData.prescribedDate);
+
+  if (sameDateRecord) {
+    sameDateRecord.pills.push({
+      name: newPillData.name,
+      dosage: newPillData.dosage,
+      totalDays: newPillData.totalDays
+    });
+  } else {
+    historyList.value.unshift({
+      date: newPillData.prescribedDate,
+      pills: [{ name: newPillData.name, dosage: newPillData.dosage, totalDays: newPillData.totalDays }]
+    });
+
+    if (historyList.value.length > 3) {
+      historyList.value.pop();
+    }
   }
-}
-currentPage.value = 'home';
+  currentPage.value = 'home';
 };
 
-// ⭕ 修正：addPill関数の外側に独立して配置
 const deletePill = (id: number) => {
-pills.value = pills.value.filter(p => p.id !== id);
+  pills.value = pills.value.filter(p => p.id !== id);
 };
 </script>
 
 <style scoped>
-/* スタイルは以前の完成版をそのまま維持しているので変更不要です */
 .app-container {
 max-width: 900px;
 width: 90%;
@@ -239,6 +257,11 @@ padding: 10px;
 position: relative;
 width: 100%;
 height: 50px;
+}
+.title{
+  margin: 0 auto; 
+  font-weight: bold;
+  line-height:40px;
 }
 .page {
 padding: 15px;
