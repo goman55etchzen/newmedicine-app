@@ -25,6 +25,11 @@
         @toggle-menu="isSidebarOpen = !isSidebarOpen"
       />
 
+      <!-- オフライン表示バー -->
+      <div v-if="!isOnline" class="offline-bar">
+        現在オフラインです。変更はローカルに保存され、接続時に同期されます。
+      </div>
+
       <div
         v-if="isSidebarOpen"
         class="overlay"
@@ -48,79 +53,24 @@
         </div>
 
         <nav class="sidebar-nav">
-          <button
-            type="button"
-            @click="goBack"
-          >
-            ホーム
-          </button>
-
-          <button
-            type="button"
-            @click="openAddPill"
-          >
-            ＋ 新しいお薬を追加
-          </button>
-
-          <button
-            type="button"
-            @click="goToHistory"
-          >
-            処方履歴
-          </button>
-
-          <button
-            type="button"
-            @click="goToMailForm"
-          >
-            お問い合わせ
-          </button>
-
-          <button
-            type="button"
-            @click="goToSettings"
-          >
-            設定
-          </button>
-
-          <button
-            type="button"
-            class="logout-btn"
-            @click="handleLogout"
-          >
-            ログアウト
-          </button>
+          <button type="button" @click="goBack">ホーム</button>
+          <button type="button" @click="openAddPill">＋ 新しいお薬を追加</button>
+          <button type="button" @click="goToHistory">処方履歴</button>
+          <button type="button" @click="goToMailForm">お問い合わせ</button>
+          <button type="button" @click="goToSettings">設定</button>
+          <button type="button" class="logout-btn" @click="handleLogout">ログアウト</button>
         </nav>
       </aside>
 
       <main class="main-content">
-
         <!-- ホーム -->
-        <div
-          v-if="currentPage === 'home'"
-          class="home-view"
-        >
-          <div
-            v-if="!pills || pills.length === 0"
-            class="empty-state"
-          >
-            <p>
-              登録されているお薬はありません。
-            </p>
-
-            <button
-              type="button"
-              class="add-btn"
-              @click="openAddPill"
-            >
-              ＋ お薬を追加する
-            </button>
+        <div v-if="currentPage === 'home'" class="home-view">
+          <div v-if="!pills || pills.length === 0" class="empty-state">
+            <p>登録されているお薬はありません。</p>
+            <button type="button" class="add-btn" @click="openAddPill">＋ お薬を追加する</button>
           </div>
 
-          <div
-            v-else
-            class="pill-list"
-          >
+          <div v-else class="pill-list">
             <PillCard
               v-for="pill in pills"
               :key="pill.id"
@@ -163,7 +113,6 @@
           @update-user="handleUserUpdated"
           @trigger-test-alert="triggerTestAlert"
         />
-
       </main>
 
       <AppFooter />
@@ -193,15 +142,13 @@
         @snooze="snoozeAlert"
         @close="isAlertOpen = false"
       />
-
     </template>
 
-    <!-- トースト通知コンポーネント（アプリ全体に表示） -->
+    <!-- トースト通知コンポーネント -->
     <ToastNotice
       :message="toastMessage"
       :is-visible="isToastVisible"
     />
-
   </div>
 </template>
 
@@ -219,21 +166,22 @@ import History from './components/History.vue'
 import MailForm from './components/MailForm.vue'
 import Settings from './components/Settings.vue'
 import AlertPopup from './components/AlertPopup.vue'
+import ToastNotice from './components/ToastNotice.vue'
 
 import type { AlertOptions, Pill, NewPillData, ScheduleTimes, User, HistoryRecord } from './types/medication'
 import { useAuth, type AuthUser } from './composables/useAuth'
 import { usePills } from './composables/usePills'
 import { useSettings } from './composables/useSettings'
 import { useCloudData } from './composables/useCloudData'
-import { notifications } from './utils/notifications'
-import { initializeFCM } from './services/fcmService'
-
-import ToastNotice from './components/ToastNotice.vue'
+import { useNetworkStatus } from './composables/useNetworkStatus'
 import { useToast } from './composables/useToast'
+import { notifications } from './utils/notifications'
+import { initializeFCM } from './firebase'
 
 const { toastMessage, isToastVisible, showToast } = useToast()
-
 const { currentUser, authPage, setUser, restoreUser, logout: authLogout, updateUser } = useAuth()
+const { isOnline } = useNetworkStatus()
+
 const currentPage = ref<'home' | 'detail' | 'history' | 'mail-form' | 'settings'>('home')
 const selectedPill = ref<Pill | null>(null)
 const isSidebarOpen = ref(false)
@@ -250,8 +198,10 @@ const {
 } = usePills()
 
 const { scheduleTimes, alertOptions } = useSettings()
-const { sync: syncCloudData, pull: fetchCloudData } = useCloudData()
+const { saveDataToCloud, fetchCloudData } = useCloudData()
 const { isAlertOpen, alertTiming, alertTargetPills, checkAlertSchedule, start, stop, takeAll, snoozeAlert, triggerTestAlert, dispose: disposeNotifications } = notifications(currentUser, pills, scheduleTimes, alertOptions, () => {})
+
+const getActiveUserId = () => currentUser.value?.email || 'Guest'
 
 function goBack() { currentPage.value = 'home'; selectedPill.value = null; isSidebarOpen.value = false }
 function openAddPill() { isSidebarOpen.value = false; isAddPillOpen.value = true }
@@ -266,7 +216,6 @@ function handleRecordUpdated(pill: Pill) {
   selectedPill.value = pills.value?.find(x => String(x.id) === String(pill.id)) || null 
 }
 
-// 削除実行処理（トースト通知呼び出し含む）
 function handleDelete(pillId: string | number) { 
   const deletedName = deletePill(pillId)
   
@@ -275,33 +224,46 @@ function handleDelete(pillId: string | number) {
     currentPage.value = 'home'
   }
   
-  syncCloudData({ pills: pills.value })
+  saveDataToCloud(getActiveUserId())
   showToast(`「${deletedName}」を削除しました`)
 }
 
-// 新規追加処理（トースト通知呼び出し含む）
 function handleAdd(newPillData: NewPillData) { 
   const createdPill = addPill(newPillData)
   isAddPillOpen.value = false
   selectedPill.value = null
   currentPage.value = 'home'
-  syncCloudData({ pills: pills.value })
+  saveDataToCloud(getActiveUserId())
   showToast(`「${createdPill.name}」を追加しました`)
 }
 
-// 履歴からの再登録処理（トースト通知呼び出し含む）
 function handleReorderFromHistory(record: HistoryRecord) {
   reorderPillsFromHistory(record)
   selectedPill.value = null
   currentPage.value = 'home'
   isSidebarOpen.value = false
-  syncCloudData({ pills: pills.value })
+  saveDataToCloud(getActiveUserId())
   showToast('処方履歴からお薬を再登録しました')
 }
 
-function updateScheduleTimes(scheduleTimesUpdate: ScheduleTimes) { Object.assign(scheduleTimes.value, scheduleTimesUpdate); syncCloudData({ scheduleTimes: scheduleTimes.value }) }
-function updateAlertOptions(alertOptionsUpdate: AlertOptions) { Object.assign(alertOptions.value, alertOptionsUpdate); syncCloudData({ alertOptions: alertOptions.value }) }
-async function handleUserUpdated(user: User) { try { const updated = await updateUser(user); if (updated) await fetchCloudData() } catch (error) { alert(error instanceof Error ? error.message : 'ユーザー情報の更新に失敗しました。') } }
+function updateScheduleTimes(scheduleTimesUpdate: ScheduleTimes) { 
+  Object.assign(scheduleTimes.value, scheduleTimesUpdate); 
+  saveDataToCloud(getActiveUserId()) 
+}
+
+function updateAlertOptions(alertOptionsUpdate: AlertOptions) { 
+  Object.assign(alertOptions.value, alertOptionsUpdate); 
+  saveDataToCloud(getActiveUserId()) 
+}
+
+async function handleUserUpdated(user: User) { 
+  try { 
+    const updated = await updateUser(user); 
+    if (updated) await fetchCloudData(user.email) 
+  } catch (error) { 
+    alert(error instanceof Error ? error.message : 'ユーザー情報の更新に失敗しました。') 
+  } 
+}
 
 async function handleLoginSuccess(userAuth?: AuthUser) {
   if (userAuth) setUser(userAuth)
@@ -311,7 +273,7 @@ async function handleLoginSuccess(userAuth?: AuthUser) {
   currentPage.value = 'home'
   selectedPill.value = null
   isSidebarOpen.value = false
-  await fetchCloudData()
+  await fetchCloudData(activeUser.email)
   try { await initializeFCM(activeUser.email) } catch (error) { console.warn('FCM skip:', error) }
   checkAlertSchedule()
 }
@@ -322,7 +284,7 @@ async function handleRegisterSuccess(userAuth?: AuthUser) {
   if (!activeUser) { authPage.value = 'login'; return }
   authPage.value = 'login'
   currentPage.value = 'home'
-  await fetchCloudData()
+  await fetchCloudData(activeUser.email)
   try { await initializeFCM(activeUser.email) } catch (error) { console.warn('FCM skip:', error) }
   checkAlertSchedule()
 }
@@ -345,7 +307,7 @@ function handleLogout() {
 onMounted(async () => {
   const u = restoreUser()
   if (u) {
-    await fetchCloudData()
+    await fetchCloudData(u.email)
   } else {
     authPage.value = 'login'
   }
@@ -353,8 +315,17 @@ onMounted(async () => {
 })
 
 onUnmounted(() => { disposeNotifications(); document.body.style.overflow = '' })
-watch([pills, historyList, scheduleTimes, alertOptions], () => { syncCloudData({ pills: pills.value, historyList: historyList.value, scheduleTimes: scheduleTimes.value, alertOptions: alertOptions.value }) }, { deep: true })
-watch([isSidebarOpen, isAddPillOpen, isDeletePillOpen, isAlertOpen], ([isSidebarOpenValue, isAddPillOpenValue, isDeletePillOpenValue, isAlertOpenValue]) => { document.body.style.overflow = (isSidebarOpenValue || isAddPillOpenValue || isDeletePillOpenValue || isAlertOpenValue) ? 'hidden' : '' })
+
+watch(
+  [pills, historyList, scheduleTimes, alertOptions], 
+  () => { saveDataToCloud(getActiveUserId()) }, 
+  { deep: true }
+)
+
+watch(
+  [isSidebarOpen, isAddPillOpen, isDeletePillOpen, isAlertOpen], 
+  ([s, a, d, al]) => { document.body.style.overflow = (s || a || d || al) ? 'hidden' : '' }
+)
 </script>
 
 <style scoped>
@@ -363,6 +334,15 @@ watch([isSidebarOpen, isAddPillOpen, isDeletePillOpen, isAlertOpen], ([isSidebar
   background-color: #f7faf8;
   display: flex;
   flex-direction: column;
+}
+
+.offline-bar {
+  background-color: #f59e0b;
+  color: #fff;
+  text-align: center;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: bold;
 }
 
 .overlay {
