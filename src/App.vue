@@ -1,356 +1,466 @@
 <template>
-<div class="app-container">
-  <header class="app-header">
-    <h1 class="title">お薬管理アプリ</h1>
-    <button
-      type="button"
-      id="menu-button"
-      @click="isOpen = !isOpen"
-      :class="{ open: isOpen }"
-    >
-      <span></span>
-      <span></span>
-      <span></span>
-    </button>
+  <div class="app-container">
 
-    <transition name="fade">
-      <div v-show="isOpen" class="nav-overlay" @click="isOpen = false"></div>
-    </transition>
-    <transition name="slide">
-      <nav v-show="isOpen" @click.stop>
-        <ul>
-          <li><a href="#" @click.prevent="goBack">ホーム</a></li>
-          <li><a href="#" @click.prevent="openAddModal">お薬の追加</a></li>
-          <li>
-            <a href="#" @click.prevent="goToHistory">おくすりの履歴</a>
-          </li>
-          <li><a href="#" @click.prevent>お問い合わせ</a></li>
-        </ul>
-      </nav>
-    </transition>
-  </header>
-
-  <main v-if="currentPage === 'home'" class="page">
-    <div class="card-list">
-      <PillCard
-        v-for="pill in pills"
-        :key="pill.id"
-        :pill="pill"
-        @click="goToDetail(pill)"
+    <!-- 未ログイン -->
+    <template v-if="!currentUser">
+      <Login
+        v-if="authPage === 'login'"
+        @login-success="handleLoginSuccess"
       />
-    </div>
-    <div class="action-row">
-      <button class="open-del-btn" @click="openDelModal">
-        おくすり記録の削除
-      </button>
-    </div>
-  </main>
 
-  <main v-else-if="currentPage === 'detail' && selectedPill" class="page">
-    <PillDetail
-      v-model:todayRecord="selectedPill.todayRecord"
-      :pill="selectedPill"
-      @back="goBack"
+      <Register
+        v-else
+        @register-success="handleRegisterSuccess"
+        @go-to-login="authPage = 'login'"
+      />
+    </template>
+
+    <!-- ログイン済み -->
+    <template v-else>
+
+      <AppHeader
+        :current-page="currentPage"
+        :is-open="isSidebarOpen"
+        @back="goBack"
+        @toggle-menu="isSidebarOpen = !isSidebarOpen"
+      />
+
+      <div
+        v-if="isSidebarOpen"
+        class="overlay"
+        @click="isSidebarOpen = false"
+      />
+
+      <aside
+        :class="[
+          'sidebar',
+          { open: isSidebarOpen },
+        ]"
+      >
+        <div class="sidebar-header">
+          <p class="user-name">
+            {{ currentUser.name }} 様
+          </p>
+
+          <p class="user-email">
+            {{ currentUser.email }}
+          </p>
+        </div>
+
+        <nav class="sidebar-nav">
+          <button
+            type="button"
+            @click="goBack"
+          >
+            ホーム
+          </button>
+
+          <button
+            type="button"
+            @click="openAddPill"
+          >
+            ＋ 新しいお薬を追加
+          </button>
+
+          <button
+            type="button"
+            @click="goToHistory"
+          >
+            処方履歴
+          </button>
+
+          <button
+            type="button"
+            @click="goToMailForm"
+          >
+            お問い合わせ
+          </button>
+
+          <button
+            type="button"
+            @click="goToSettings"
+          >
+            設定
+          </button>
+
+          <button
+            type="button"
+            class="logout-btn"
+            @click="handleLogout"
+          >
+            ログアウト
+          </button>
+        </nav>
+      </aside>
+
+      <main class="main-content">
+
+        <!-- ホーム -->
+        <div
+          v-if="currentPage === 'home'"
+          class="home-view"
+        >
+          <div
+            v-if="!pills || pills.length === 0"
+            class="empty-state"
+          >
+            <p>
+              登録されているお薬はありません。
+            </p>
+
+            <button
+              type="button"
+              class="add-btn"
+              @click="openAddPill"
+            >
+              ＋ お薬を追加する
+            </button>
+          </div>
+
+          <div
+            v-else
+            class="pill-list"
+          >
+            <PillCard
+              v-for="pill in pills"
+              :key="pill.id"
+              :pill="pill"
+              @select="goToDetail"
+            />
+          </div>
+        </div>
+
+        <!-- 詳細 -->
+        <PillDetail
+          v-else-if="currentPage === 'detail'"
+          :pill="selectedPill"
+          @back="goBack"
+          @delete="openDeletePill"
+          @update:today-record="handleRecordUpdated"
+        />
+
+        <!-- 履歴 -->
+        <History
+          v-else-if="currentPage === 'history'"
+          :history-list="historyList || []"
+          @reorder="handleReorderFromHistory"
+        />
+
+        <!-- 問い合わせ -->
+        <MailForm
+          v-else-if="currentPage === 'mail-form'"
+          :user-email="currentUser.email"
+        />
+
+        <!-- 設定 -->
+        <Settings
+          v-else-if="currentPage === 'settings'"
+          :user="currentUser"
+          :schedule-times="scheduleTimes"
+          :alert-options="alertOptions"
+          @update-schedule-times="updateScheduleTimes"
+          @update-alert-options="updateAlertOptions"
+          @update-user="handleUserUpdated"
+          @trigger-test-alert="triggerTestAlert"
+        />
+
+      </main>
+
+      <AppFooter />
+
+      <!-- 追加 -->
+      <AddPill
+        v-if="isAddPillOpen"
+        @close="isAddPillOpen = false"
+        @add="handleAdd"
+      />
+
+      <!-- 削除モーダル -->
+      <DeletePill
+        v-if="isDeletePillOpen"
+        :pills="pills"
+        @close="isDeletePillOpen = false"
+        @delete-pill="handleDelete"
+      />
+
+      <!-- アラート -->
+      <AlertPopup
+        v-if="isAlertOpen"
+        :timing="alertTiming"
+        :pills="alertTargetPills"
+        :options="alertOptions"
+        @take-all="takeAll"
+        @snooze="snoozeAlert"
+        @close="isAlertOpen = false"
+      />
+
+    </template>
+
+    <!-- トースト通知コンポーネント（アプリ全体に表示） -->
+    <ToastNotice
+      :message="toastMessage"
+      :is-visible="isToastVisible"
     />
-  </main>
 
-  <main v-else-if="currentPage === 'history'" class="page">
-    <History :historyList="historyList" @back="goBack" />
-  </main>
-
-  <AddModal v-model:isOpen="isAddModalOpen" @add-pill="addPill" />
-
-  <DelModal
-    v-model:isOpen="isDelModalOpen"
-    :pills="pills"
-    @delete-pill="deletePill"
-  />
-</div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
-import PillCard from './PillCard.vue';
-import PillDetail from './PillDetail.vue';
-import AddModal from './AddModal.vue';
-import DelModal from './DelModal.vue';
-import History from './History.vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import AppHeader from './components/AppHeader.vue'
+import AppFooter from './components/AppFooter.vue'
+import Login from './components/Login.vue'
+import Register from './components/Register.vue'
+import PillCard from './components/PillCard.vue'
+import PillDetail from './components/PillDetail.vue'
+import AddPill from './components/AddPill.vue'
+import DeletePill from './components/DeletePill.vue'
+import History from './components/History.vue'
+import MailForm from './components/MailForm.vue'
+import Settings from './components/Settings.vue'
+import AlertPopup from './components/AlertPopup.vue'
 
-// 1. お薬データの型を定義
-interface Pill {
-  id: number;
-  name: string;
-  prescribedDate: string;
-  totalDays: number;
-  dosage: string;
-  timing: {
-    朝: boolean;
-    昼: boolean;
-    夜: boolean;
-    就寝前: boolean;
-  };
-  todayRecord: {
-    朝: boolean;
-    昼: boolean;
-    夜: boolean;
-    就寝前: boolean;
-  };
+import type { AlertOptions, Pill, NewPillData, ScheduleTimes, User, HistoryRecord } from './types/medication'
+import { useAuth, type AuthUser } from './composables/useAuth'
+import { usePills } from './composables/usePills'
+import { useSettings } from './composables/useSettings'
+import { useCloudData } from './composables/useCloudData'
+import { useNotifications } from './composables/useNotifications'
+import { initializeFCM } from './services/fcmService'
+
+import ToastNotice from './components/ToastNotice.vue'
+import { useToast } from './composables/useToast'
+
+const { toastMessage, isToastVisible, showToast } = useToast()
+
+const { currentUser, authPage, setUser, restoreUser, logout: authLogout, updateUser } = useAuth()
+const currentPage = ref<'home' | 'detail' | 'history' | 'mail-form' | 'settings'>('home')
+const selectedPill = ref<Pill | null>(null)
+const isSidebarOpen = ref(false)
+const isAddPillOpen = ref(false)
+const isDeletePillOpen = ref(false)
+
+const { 
+  medicines: pills, 
+  historyList, 
+  addPill, 
+  deletePill, 
+  updateTodayRecord, 
+  reorderPillsFromHistory 
+} = usePills()
+
+const { scheduleTimes, alertOptions } = useSettings()
+const { sync: syncCloudData, pull: fetchCloudData } = useCloudData()
+const { isAlertOpen, alertTiming, alertTargetPills, checkAlertSchedule, start, stop, takeAll, snoozeAlert, triggerTestAlert, dispose: disposeNotifications } = useNotifications(currentUser, pills, scheduleTimes, alertOptions, () => {})
+
+function goBack() { currentPage.value = 'home'; selectedPill.value = null; isSidebarOpen.value = false }
+function openAddPill() { isSidebarOpen.value = false; isAddPillOpen.value = true }
+function openDeletePill() { isDeletePillOpen.value = true }
+function goToHistory() { currentPage.value = 'history'; isSidebarOpen.value = false }
+function goToMailForm() { currentPage.value = 'mail-form'; isSidebarOpen.value = false }
+function goToSettings() { currentPage.value = 'settings'; isSidebarOpen.value = false }
+function goToDetail(pill: Pill) { selectedPill.value = pill; currentPage.value = 'detail' }
+
+function handleRecordUpdated(pill: Pill) { 
+  updateTodayRecord(pill.id, pill.todayRecord)
+  selectedPill.value = pillills.value?.find(x => String(x.id) === String(pill.id)) || null 
 }
 
-interface HistoryRecord {
-  date: string;
-  pills: { name: string; dosage: string; totalDays: number }[];
-}
-
-const currentPage = ref<'home' | 'detail' | 'history'>('home');
-const selectedPill = ref<Pill | null>(null);
-const isOpen = ref(false);
-const isAddModalOpen = ref(false);
-const isDelModalOpen = ref(false); 
-
-
-const defaultPills: Pill[] = [
-  {
-    id: 1,
-    name: 'アタラックス',
-    prescribedDate: '2026-05-20',
-    totalDays: 30,
-    dosage: '300mg (3錠)',
-    timing: { 朝: true, 昼: true, 夜: false, 就寝前: true },
-    todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
-  },
-  {
-    id: 2,
-    name: 'ロキソニン',
-    prescribedDate: '2026-05-25',
-    totalDays: 15,
-    dosage: '60mg (1錠)',
-    timing: { 朝: false, 昼: true, 夜: true, 就寝前: false },
-    todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
-  },
-  {
-    id: 3,
-    name: 'ロラゼパム',
-    prescribedDate: '2026-05-27',
-    totalDays: 90,
-    dosage: '100mg (1錠)',
-    timing: { 朝: true, 昼: true, 夜: true, 就寝前: true },
-    todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
-  },
-];
-
-const defaultHistory: HistoryRecord[] = [
-  {
-    date: '2026-06-01',
-    pills: [{ name: '葛根湯', dosage: '1袋', totalDays: 5 }]
+// 削除実行処理（トースト通知呼び出し含む）
+function handleDelete(pillId: string | number) { 
+  const deletedName = deletePill(pillId)
+  
+  if (selectedPill.value && String(selectedPill.value.id) === String(pillId)) {
+    selectedPill.value = null
+    currentPage.value = 'home'
   }
-];
-
-// 変数名historyList に統一
-const pills = ref<Pill[]>([]);
-const historyList = ref<HistoryRecord[]>([]);
-
-
-onMounted(() => {
-  const savedPills = localStorage.getItem('pills_data');
-  const savedHistory = localStorage.getItem('history_data');
   
-  pills.value = savedPills ? JSON.parse(savedPills) : defaultPills;
-  historyList.value = savedHistory ? JSON.parse(savedHistory) : defaultHistory;
-});
+  syncCloudData({ pills: pills.value })
+  showToast(`「${deletedName}」を削除しました`)
+}
 
-// ⭕ 監視処理（構文エラーを修正、2つ目は historyList を監視するように変更）
-watch(pills, (newPills) => {
-  localStorage.setItem('pills_data', JSON.stringify(newPills));
-}, { deep: true });
+// 新規追加処理（トースト通知呼び出し含む）
+function handleAdd(newPillData: NewPillData) { 
+  const createdPill = addPill(newPillData)
+  isAddPillOpen.value = false
+  selectedPill.value = null
+  currentPage.value = 'home'
+  syncCloudData({ pills: pills.value })
+  showToast(`「${createdPill.name}」を追加しました`)
+}
 
-watch(historyList, (newHistory) => {
-  localStorage.setItem('history_data', JSON.stringify(newHistory));
-}, { deep: true });
+// 履歴からの再登録処理（トースト通知呼び出し含む）
+function handleReorderFromHistory(record: HistoryRecord) {
+  reorderPillsFromHistory(record)
+  selectedPill.value = null
+  currentPage.value = 'home'
+  isSidebarOpen.value = false
+  syncCloudData({ pills: pills.value })
+  showToast('処方履歴からお薬を再登録しました')
+}
 
+function updateScheduleTimes(scheduleTimesUpdate: ScheduleTimes) { Object.assign(scheduleTimes.value, scheduleTimesUpdate); syncCloudData({ scheduleTimes: scheduleTimes.value }) }
+function updateAlertOptions(alertOptionsUpdate: AlertOptions) { Object.assign(alertOptions.value, alertOptionsUpdate); syncCloudData({ alertOptions: alertOptions.value }) }
+async function handleUserUpdated(user: User) { try { const updated = await updateUser(user); if (updated) await fetchCloudData() } catch (error) { alert(error instanceof Error ? error.message : 'ユーザー情報の更新に失敗しました。') } }
 
-// --- 画面遷移や追加・削除のロジック群 ---
-const goToDetail = (pill: Pill) => {
-  selectedPill.value = pill;
-  currentPage.value = 'detail';
-  isOpen.value = false;
-};
+async function handleLoginSuccess(user?: AuthUser) {
+  if (user) setUser(user)
+  const user = currentUser.value
+  if (!user) return
+  authPage.value = 'login'
+  currentPage.value = 'home'
+  selectedPill.value = null
+  isSidebarOpen.value = false
+  await fetchCloudData()
+  try { await initializeFCM(user.email) } catch (error) { console.warn('FCM skip:', error) }
+  checkAlertSchedule()
+}
 
-const goBack = () => {
-  currentPage.value = 'home';
-  selectedPill.value = null;
-  isOpen.value = false;
-};
+async function handleRegisterSuccess(user?: AuthUser) {
+  if (user) setUser(user)
+  const user = currentUser.value
+  if (!user) { authPage.value = 'login'; return }
+  authPage.value = 'login'
+  currentPage.value = 'home'
+  await fetchCloudData()
+  try { await initializeFCM(user.email) } catch (error) { console.warn('FCM skip:', error) }
+  checkAlertSchedule()
+}
 
-const openAddModal = () => {
-  isAddModalOpen.value = true;
-  isOpen.value = false;
-};
+function handleLogout() {
+  stop()
+  authLogout()
+  authPage.value = 'login'
+  if (pills) pills.value = []
+  if (historyList) historyList.value = []
+  selectedPill.value = null
+  currentPage.value = 'home'
+  isSidebarOpen.value = false
+  isAddPillOpen.value = false
+  isDeletePillOpen.value = false
+  isAlertOpen.value = false
+  document.body.style.overflow = ''
+}
 
-const goToHistory = () => {
-  currentPage.value = 'history';
-  isOpen.value = false;
-};
-
-const openDelModal = () => {
-  isDelModalOpen.value = true;
-};
-
-const addPill = (newPillData: Omit<Pill, 'id' | 'todayRecord'>) => {
-  const id = pills.value.length
-    ? Math.max(...pills.value.map((p) => p.id)) + 1 : 1;
-
-  pills.value.push({
-    id,
-    name: newPillData.name,
-    prescribedDate: newPillData.prescribedDate,
-    totalDays: newPillData.totalDays,
-    dosage: newPillData.dosage,
-    timing: { ...newPillData.timing },
-    todayRecord: { 朝: false, 昼: false, 夜: false, 就寝前: false },
-  });
-
-  
-  const sameDateRecord = historyList.value.find(h => h.date === newPillData.prescribedDate);
-
-  if (sameDateRecord) {
-    sameDateRecord.pills.push({
-      name: newPillData.name,
-      dosage: newPillData.dosage,
-      totalDays: newPillData.totalDays
-    });
+onMounted(async () => {
+  const u = restoreUser()
+  if (u) {
+    await fetchCloudData()
   } else {
-    historyList.value.unshift({
-      date: newPillData.prescribedDate,
-      pills: [{ name: newPillData.name, dosage: newPillData.dosage, totalDays: newPillData.totalDays }]
-    });
-
-    if (historyList.value.length > 3) {
-      historyList.value.pop();
-    }
+    authPage.value = 'login'
   }
-  currentPage.value = 'home';
-};
+  start()
+})
 
-const deletePill = (id: number) => {
-  pills.value = pills.value.filter(p => p.id !== id);
-};
+onUnmounted(() => { disposeNotifications(); document.body.style.overflow = '' })
+watch([pills, historyList, scheduleTimes, alertOptions], () => { syncCloudData({ pills: pills.value, historyList: historyList.value, scheduleTimes: scheduleTimes.value, alertOptions: alertOptions.value }) }, { deep: true })
+watch([isSidebarOpen, isAddPillOpen, isDeletePillOpen, isAlertOpen], ([isSidebarOpenValue, isAddPillOpenValue, isDeletePillOpenValue, isAlertOpenValue]) => { document.body.style.overflow = (isSidebarOpenValue || isAddPillOpenValue || isDeletePillOpenValue || isAlertOpenValue) ? 'hidden' : '' })
 </script>
 
 <style scoped>
 .app-container {
-max-width: 900px;
-width: 90%;
-margin: 0 auto;
-font-family: sans-serif;
-color: black;
-background-color: #f8f9fa;
-min-height: 100vh;
-position: relative;
-overflow-x: hidden;
+  min-height: 100vh;
+  background-color: #f7faf8;
+  display: flex;
+  flex-direction: column;
 }
-.app-header {
-background-color: #41b883;
-color: white;
-text-align: center;
-padding: 10px;
-position: relative;
-width: 100%;
-height: 50px;
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 90;
 }
-.title{
-  margin: 0 auto; 
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 280px;
+  background-color: #ffffff;
+  z-index: 100;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar.open {
+  transform: translateX(0);
+}
+
+.sidebar-header {
+  padding: 24px 16px;
+  background-color: #eaf3ec;
+}
+
+.user-name {
   font-weight: bold;
-  line-height:40px;
+  color: #2e5a44;
+  margin: 0;
 }
-.page {
-padding: 15px;
-}
-#menu-button {
-position: absolute;
-top: 50%;
-right: 30px;
-transform: translateY(-50%);
-width: 30px;
-height: 24px;
-border: none;
-cursor: pointer;
-padding: 0;
-z-index: 150;
-background: transparent !important;
-}
-#menu-button span {
-position: absolute;
-left: 0;
-display: block;
-width: 100%;
-height: 3px;
-background-color: white;
-border-radius: 2px;
-transition: all 0.3s ease;
-}
-#menu-button span:nth-child(1) { top: 0; }
-#menu-button span:nth-child(2) { top: 10px; }
-#menu-button span:nth-child(3) { top: 20px; }
-#menu-button.open span:nth-child(1) { transform: translateY(10px) rotate(45deg); }
-#menu-button.open span:nth-child(2) { opacity: 0; }
-#menu-button.open span:nth-child(3) { transform: translateY(-10px) rotate(-45deg); }
 
-.nav-overlay {
-position: fixed;
-top: 0;
-left: 0;
-width: 100%;
-height: 100vh;
-background: rgba(0, 0, 0, 0.5);
-z-index: 100;
+.user-email {
+  font-size: 0.8rem;
+  color: #666;
+  margin: 4px 0 0;
 }
-nav {
-position: fixed;
-top: 0;
-right: 0;
-width: 250px;
-height: 100vh;
-background: #1a202c;
-display: flex;
-justify-content: center;
-align-items: center;
-box-shadow: -4px 0 1px rgba(0, 0, 0, 0.3);
-z-index: 130;
-}
-nav ul {
-list-style: none;
-padding: 0;
-margin: 0;
-text-align: left;
-}
-nav ul li { margin: 30px 0; }
-nav ul li a {
-color: white;
-text-decoration: none;
-font-size: 1.3rem;
-font-weight: bold;
-transition: color 0.2s;
-}
-nav ul li a:hover { color: #41b883; }
 
-.action-row {
-margin-top: 20px;
-text-align: center;
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 6px;
 }
-.open-del-btn {
-background-color: #e53e3e;
-color: white;
-border: none;
-padding: 10px 20px;
-border-radius: 6px;
-font-weight: bold;
-cursor: pointer;
-font-size: 1rem;
+
+.sidebar-nav button {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #3b5e4c;
+  cursor: pointer;
+  border-radius: 12px;
 }
-.open-del-btn:hover { background-color: #c53030; }
-.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-.slide-enter-active, .slide-leave-active { transition: transform 0.3s ease; }
-.slide-enter-from, .slide-leave-to { transform: translateX(100%); }
+
+.sidebar-nav .logout-btn {
+  margin-top: 20px;
+  color: #d9534f;
+}
+
+.main-content {
+  flex: 1;
+  padding: 20px 16px;
+  max-width: 600px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.pill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #666;
+}
+
+.add-btn {
+  margin-top: 16px;
+  padding: 10px 20px;
+  background-color: #10b981;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+}
 </style>
