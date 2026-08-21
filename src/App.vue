@@ -263,7 +263,7 @@ function goToDetail(pill: Pill) { selectedPill.value = pill; currentPage.value =
 
 function handleRecordUpdated(pill: Pill) { 
   updateTodayRecord(pill.id, pill.todayRecord)
-  selectedPill.value = pillills.value?.find(x => String(x.id) === String(pill.id)) || null 
+  selectedPill.value = pills.value?.find(x => String(x.id) === String(pill.id)) || null 
 }
 
 // 削除実行処理（トースト通知呼び出し含む）
@@ -303,27 +303,27 @@ function updateScheduleTimes(scheduleTimesUpdate: ScheduleTimes) { Object.assign
 function updateAlertOptions(alertOptionsUpdate: AlertOptions) { Object.assign(alertOptions.value, alertOptionsUpdate); syncCloudData({ alertOptions: alertOptions.value }) }
 async function handleUserUpdated(user: User) { try { const updated = await updateUser(user); if (updated) await fetchCloudData() } catch (error) { alert(error instanceof Error ? error.message : 'ユーザー情報の更新に失敗しました。') } }
 
-async function handleLoginSuccess(user?: AuthUser) {
-  if (user) setUser(user)
-  const user = currentUser.value
-  if (!user) return
+async function handleLoginSuccess(userAuth?: AuthUser) {
+  if (userAuth) setUser(userAuth)
+  const activeUser = currentUser.value
+  if (!activeUser) return
   authPage.value = 'login'
   currentPage.value = 'home'
   selectedPill.value = null
   isSidebarOpen.value = false
   await fetchCloudData()
-  try { await initializeFCM(user.email) } catch (error) { console.warn('FCM skip:', error) }
+  try { await initializeFCM(activeUser.email) } catch (error) { console.warn('FCM skip:', error) }
   checkAlertSchedule()
 }
 
-async function handleRegisterSuccess(user?: AuthUser) {
-  if (user) setUser(user)
-  const user = currentUser.value
-  if (!user) { authPage.value = 'login'; return }
+async function handleRegisterSuccess(userAuth?: AuthUser) {
+  if (userAuth) setUser(userAuth)
+  const activeUser = currentUser.value
+  if (!activeUser) { authPage.value = 'login'; return }
   authPage.value = 'login'
   currentPage.value = 'home'
   await fetchCloudData()
-  try { await initializeFCM(user.email) } catch (error) { console.warn('FCM skip:', error) }
+  try { await initializeFCM(activeUser.email) } catch (error) { console.warn('FCM skip:', error) }
   checkAlertSchedule()
 }
 
