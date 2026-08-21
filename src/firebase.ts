@@ -15,7 +15,7 @@ import type {
 } from './types/medication';
 
 /* ============================================================
- * Configuration & Constants (環境変数からの取得のみに制限)
+ * Configuration & Constants
  * ============================================================ */
 
 const firebaseConfig = {
@@ -27,8 +27,8 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
 };
 
-export const GAS_WEB_APP_URL = import.meta.env.VITE_GAS_URL || '';
-const FCM_VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || '';
+export const GAS_WEB_APP_URL: string = import.meta.env.VITE_GAS_URL || '';
+const FCM_VAPID_KEY: string = import.meta.env.VITE_FIREBASE_VAPID_KEY || '';
 
 /* ============================================================
  * Helper Utilities & Guest Logic
@@ -42,32 +42,31 @@ export const normalizeUserId = (userId?: string | null): string => {
 export const isGuestUser = (userId?: string | null): boolean => normalizeUserId(userId) === 'Guest';
 
 export const isBrowserEnv = (): boolean => typeof window !== 'undefined' && typeof navigator !== 'undefined';
-export const isNotificationSupported = (): boolean => isBrowserEnv() && 'Notification' in window;
+export const isNotificationSupported = (): boolean => isBrowserEnv() && typeof window.Notification !== 'undefined';
 export const isServiceWorkerSupported = (): boolean => isBrowserEnv() && 'serviceWorker' in navigator;
-export const isPushManagerSupported = (): boolean => isBrowserEnv() && 'PushManager' in window;
+export const isPushManagerSupported = (): boolean => isBrowserEnv() && typeof window.PushManager !== 'undefined';
 
 /* ============================================================
  * Firebase Initialization
  * ============================================================ */
 
-// 必須の環境変数が揃っている場合のみアプリを初期化
 const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
 
 const app = isFirebaseConfigured
   ? (getApps().length === 0 ? initializeApp(firebaseConfig) : getApp())
   : null;
 
-let messaging: Messaging | null = null;
+let messagingInstance: Messaging | null = null;
 
 if (app && isBrowserEnv() && isServiceWorkerSupported()) {
   try {
-    messaging = getMessaging(app);
+    messagingInstance = getMessaging(app);
   } catch (error) {
     console.warn('Firebase Messaging 初期化スキップ:', error);
   }
 }
 
-export { messaging };
+export const messaging: Messaging | null = messagingInstance;
 
 /* ============================================================
  * Types
@@ -148,9 +147,9 @@ export const initializeFCM = async (userId: string): Promise<string | null> => {
   }
 
   try {
-    let permission = Notification.permission;
+    let permission = window.Notification.permission;
     if (permission === 'default') {
-      permission = await Notification.requestPermission();
+      permission = await window.Notification.requestPermission();
     }
     if (permission !== 'granted') return null;
 
