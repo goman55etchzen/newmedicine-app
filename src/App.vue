@@ -225,7 +225,7 @@ import { useAuth, type AuthUser } from './composables/useAuth'
 import { usePills } from './composables/usePills'
 import { useSettings } from './composables/useSettings'
 import { useCloudData } from './composables/useCloudData'
-import { notifications } from '/utils/notifications'
+import { notifications } from './utils/notifications'
 import { initializeFCM } from './services/fcmService'
 
 import ToastNotice from './components/ToastNotice.vue'
