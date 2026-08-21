@@ -225,7 +225,7 @@ import { useAuth, type AuthUser } from './composables/useAuth'
 import { usePills } from './composables/usePills'
 import { useSettings } from './composables/useSettings'
 import { useCloudData } from './composables/useCloudData'
-import { useNotifications } from './composables/useNotifications'
+import { notifications } from '/utils/notifications'
 import { initializeFCM } from './services/fcmService'
 
 import ToastNotice from './components/ToastNotice.vue'
@@ -251,7 +251,7 @@ const {
 
 const { scheduleTimes, alertOptions } = useSettings()
 const { sync: syncCloudData, pull: fetchCloudData } = useCloudData()
-const { isAlertOpen, alertTiming, alertTargetPills, checkAlertSchedule, start, stop, takeAll, snoozeAlert, triggerTestAlert, dispose: disposeNotifications } = useNotifications(currentUser, pills, scheduleTimes, alertOptions, () => {})
+const { isAlertOpen, alertTiming, alertTargetPills, checkAlertSchedule, start, stop, takeAll, snoozeAlert, triggerTestAlert, dispose: disposeNotifications } = notifications(currentUser, pills, scheduleTimes, alertOptions, () => {})
 
 function goBack() { currentPage.value = 'home'; selectedPill.value = null; isSidebarOpen.value = false }
 function openAddPill() { isSidebarOpen.value = false; isAddPillOpen.value = true }
