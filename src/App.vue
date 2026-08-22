@@ -175,7 +175,7 @@ import { useSettings } from './composables/useSettings'
 import { useCloudData } from './composables/useCloudData'
 import { useNetworkStatus } from './composables/useNetworkStatus'
 import { useToast } from './composables/useToast'
-import { notifications } from './utils/notifications'
+import { useNotifications } from './utils/notifications'
 import { initializeFCM } from './firebase'
 
 const { toastMessage, isToastVisible, showToast } = useToast()
@@ -199,7 +199,19 @@ const {
 
 const { scheduleTimes, alertOptions } = useSettings()
 const { saveDataToCloud, fetchCloudData } = useCloudData()
-const { isAlertOpen, alertTiming, alertTargetPills, checkAlertSchedule, start, stop, takeAll, snoozeAlert, triggerTestAlert, dispose: disposeNotifications } = notifications(currentUser, pills, scheduleTimes, alertOptions, () => {})
+
+const { 
+  isAlertOpen, 
+  alertTiming, 
+  alertTargetPills, 
+  checkAlertSchedule, 
+  start, 
+  stop, 
+  takeAll, 
+  snoozeAlert, 
+  triggerTestAlert, 
+  dispose: disposeNotifications 
+} = useNotifications(currentUser, pills, scheduleTimes, alertOptions, () => {})
 
 const getActiveUserId = () => currentUser.value?.email || 'Guest'
 
