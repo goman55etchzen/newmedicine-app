@@ -54,4 +54,13 @@ export function usePills() {
     updateTodayRecord,
     reorderPillsFromHistory
   }
+  // src/composables/medication.ts
+
+/*
+ * 旧パスとの互換用。
+ *
+ * usePills の本体は usePills.ts に一本化する。
+ */
+
+export { usePills } from './usePills'
 }

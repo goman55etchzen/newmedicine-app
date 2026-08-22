@@ -1,82 +1,342 @@
-import { ref } from 'vue';
-import { getUserDataFromGAS, syncDataToGAS, normalizeUserId, isGuestUser } from '../firebase';
-import { usePills } from './usePills';
-import { useSettings } from './useSettings';
+// src/composables/useCloudData.ts
 
-const isLoading = ref<boolean>(false);
-const LOCAL_STORAGE_KEY_TIMESTAMP = 'med_app_last_updated';
+import { ref } from 'vue'
+
+import {
+  getUserDataFromGAS,
+  syncDataToGAS,
+  normalizeUserId,
+  isGuestUser,
+} from '../firebase'
+
+import { usePills } from './usePills'
+import { useSettings } from './useSettings'
+
+const isLoading = ref(false)
+
+const LOCAL_STORAGE_KEY_PREFIX =
+  'med_app_last_updated_'
 
 export function useCloudData() {
-  const { medicines: pills, historyList } = usePills(); // Pills / History の正本（要件3）
-  const { scheduleTimes, alertOptions, setScheduleTimes, setAlertOptions } = useSettings();
 
-  const getLocalTimestamp = (): number => {
-    const ts = localStorage.getItem(LOCAL_STORAGE_KEY_TIMESTAMP);
-    return ts ? parseInt(ts, 10) : 0;
-  };
-
-  const setLocalTimestamp = (ts: number): void => {
-    localStorage.setItem(LOCAL_STORAGE_KEY_TIMESTAMP, String(ts));
-  };
-
-  /**
-   * クラウドとローカルのタイムスタンプ比較・照合同期（要件4）
+  /*
+   * usePills は共有state。
+   *
+   * App.vue と同じ medicines / historyList を参照する。
    */
-  const fetchCloudData = async (userId: string) => {
-    const normUserId = normalizeUserId(userId);
-    if (isGuestUser(normUserId)) return;
+  const {
+    medicines: pills,
+    historyList,
+    replacePills,
+    replaceHistoryList,
+  } = usePills()
 
-    isLoading.value = true;
-    try {
-      const cloudData = await getUserDataFromGAS(normUserId);
-      if (!cloudData) return;
+  const {
+    scheduleTimes,
+    alertOptions,
+    setScheduleTimes,
+    setAlertOptions,
+  } = useSettings()
 
-      const cloudTimestamp = cloudData.lastUpdated || 0;
-      const localTimestamp = getLocalTimestamp();
+  /*
+   * ユーザーごとにlocalStorageを分離する。
+   */
+  const getStorageKey = (
+    userId: string
+  ): string => {
 
-      if (cloudTimestamp > localTimestamp) {
-        // クラウドの方が新しい場合：ローカルへ適用
-        if (Array.isArray(cloudData.pills)) pills.value = cloudData.pills;
-        if (Array.isArray(cloudData.historyList)) historyList.value = cloudData.historyList;
-        if (cloudData.scheduleTimes) setScheduleTimes(cloudData.scheduleTimes);
-        if (cloudData.alertOptions) setAlertOptions(cloudData.alertOptions);
+    const normalizedUserId =
+      normalizeUserId(userId)
 
-        setLocalTimestamp(cloudTimestamp);
-      } else if (localTimestamp > cloudTimestamp) {
-        // ローカルの方が新しい場合：クラウドへ保存・同期
-        await saveDataToCloud(normUserId);
-      }
-    } catch (error) {
-      console.error('データ同期照合エラー:', error);
-    } finally {
-      isLoading.value = false;
+    return `${LOCAL_STORAGE_KEY_PREFIX}${normalizedUserId}`
+  }
+
+  /*
+   * ローカル更新日時を取得
+   */
+  const getLocalTimestamp = (
+    userId: string
+  ): number => {
+
+    if (
+      typeof localStorage === 'undefined'
+    ) {
+      return 0
     }
-  };
 
-  /**
-   * ローカルの正本データをクラウドへ押し出し同期（要件3, 4）
+    const value = localStorage.getItem(
+      getStorageKey(userId)
+    )
+
+    if (!value) {
+      return 0
+    }
+
+    const timestamp = Number(value)
+
+    return Number.isFinite(timestamp)
+      ? timestamp
+      : 0
+  }
+
+  /*
+   * ローカル更新日時を保存
    */
-  const saveDataToCloud = async (userId: string): Promise<boolean> => {
-    const normUserId = normalizeUserId(userId);
-    if (isGuestUser(normUserId)) return false;
+  const setLocalTimestamp = (
+    userId: string,
+    timestamp: number
+  ): void => {
 
-    const now = Date.now();
-    setLocalTimestamp(now);
+    if (
+      typeof localStorage === 'undefined'
+    ) {
+      return
+    }
 
-    return await syncDataToGAS(normUserId, {
-      pills: pills.value,
-      historyList: historyList.value,
-      scheduleTimes: scheduleTimes.value,
-      alertOptions: alertOptions.value,
-      lastUpdated: now,
-    });
-  };
+    localStorage.setItem(
+      getStorageKey(userId),
+      String(timestamp)
+    )
+  }
+
+  /*
+   * ==========================================================
+   * GAS → Local / Local → GAS
+   * ==========================================================
+   */
+  const fetchCloudData = async (
+    userId: string
+  ): Promise<void> => {
+
+    const normalizedUserId =
+      normalizeUserId(userId)
+
+    if (
+      isGuestUser(normalizedUserId)
+    ) {
+      return
+    }
+
+    isLoading.value = true
+
+    try {
+
+      const cloudData =
+        await getUserDataFromGAS(
+          normalizedUserId
+        )
+
+      if (!cloudData) {
+        return
+      }
+
+      const cloudTimestamp =
+        Number(
+          cloudData.lastUpdated ?? 0
+        )
+
+      const localTimestamp =
+        getLocalTimestamp(
+          normalizedUserId
+        )
+
+      /*
+       * ------------------------------------------
+       * GASの方が新しい
+       * ------------------------------------------
+       */
+      if (
+        cloudTimestamp >
+        localTimestamp
+      ) {
+
+        if (
+          Array.isArray(cloudData.pills)
+        ) {
+          replacePills(
+            cloudData.pills
+          )
+        }
+
+        if (
+          Array.isArray(
+            cloudData.historyList
+          )
+        ) {
+          replaceHistoryList(
+            cloudData.historyList
+          )
+        }
+
+        if (
+          cloudData.scheduleTimes
+        ) {
+          setScheduleTimes(
+            cloudData.scheduleTimes
+          )
+        }
+
+        if (
+          cloudData.alertOptions
+        ) {
+          setAlertOptions(
+            cloudData.alertOptions
+          )
+        }
+
+        setLocalTimestamp(
+          normalizedUserId,
+          cloudTimestamp
+        )
+
+        return
+      }
+
+      /*
+       * ------------------------------------------
+       * ローカルの方が新しい
+       * ------------------------------------------
+       */
+      if (
+        localTimestamp >
+        cloudTimestamp
+      ) {
+
+        await saveDataToCloud(
+          normalizedUserId
+        )
+
+        return
+      }
+
+      /*
+       * ------------------------------------------
+       * 初回同期
+       *
+       * 両方ともtimestamp=0の場合、
+       * GASにデータがあれば読み込む。
+       * ------------------------------------------
+       */
+      if (
+        localTimestamp === 0 &&
+        cloudTimestamp === 0
+      ) {
+
+        if (
+          Array.isArray(cloudData.pills)
+        ) {
+          replacePills(
+            cloudData.pills
+          )
+        }
+
+        if (
+          Array.isArray(
+            cloudData.historyList
+          )
+        ) {
+          replaceHistoryList(
+            cloudData.historyList
+          )
+        }
+
+        if (
+          cloudData.scheduleTimes
+        ) {
+          setScheduleTimes(
+            cloudData.scheduleTimes
+          )
+        }
+
+        if (
+          cloudData.alertOptions
+        ) {
+          setAlertOptions(
+            cloudData.alertOptions
+          )
+        }
+      }
+
+    } catch (error) {
+
+      console.error(
+        'データ同期照合エラー:',
+        error
+      )
+
+    } finally {
+
+      isLoading.value = false
+    }
+  }
+
+  /*
+   * ==========================================================
+   * Local → GAS
+   * ==========================================================
+   */
+  const saveDataToCloud = async (
+    userId: string
+  ): Promise<boolean> => {
+
+    const normalizedUserId =
+      normalizeUserId(userId)
+
+    if (
+      isGuestUser(normalizedUserId)
+    ) {
+      return false
+    }
+
+    const now = Date.now()
+
+    try {
+
+      /*
+       * GASへの保存成功を確認してから
+       * localStorageのtimestampを更新する。
+       */
+      const success =
+        await syncDataToGAS(
+          normalizedUserId,
+          {
+            pills: pills.value,
+            historyList: historyList.value,
+            scheduleTimes:
+              scheduleTimes.value,
+            alertOptions:
+              alertOptions.value,
+            lastUpdated: now,
+          }
+        )
+
+      if (success) {
+
+        setLocalTimestamp(
+          normalizedUserId,
+          now
+        )
+      }
+
+      return success
+
+    } catch (error) {
+
+      console.error(
+        'クラウド保存エラー:',
+        error
+      )
+
+      return false
+    }
+  }
 
   return {
     pills,
     historyList,
     isLoading,
+
     fetchCloudData,
     saveDataToCloud,
-  };
+  }
 }
